@@ -23,7 +23,7 @@
 //   SCK    -    Pin PA5
 //   SO     -    Pin PA6
 //   SI     -    Pin PA7
-//   CS     -    Pin PA8
+//   CS     -    Pin PA4
 //-----------------------------------------------------------------
 #ifndef ENC28J60_H
 #define ENC28J60_H
@@ -49,7 +49,7 @@ public:
     *     @return <i>uint8_t</i> ENC28J60 firmware version or zero on failure.
     */
     static uint8_t initialize (const uint16_t size, const uint8_t* macaddr,
-                               uint8_t csPin = PA8);
+                               uint8_t csPin = PA4);
 
     /**   @brief  Check if network link is connected
     *     @return <i>bool</i> True if link is up
@@ -121,7 +121,7 @@ public:
     *     @param  csPin Arduino pin used for chip select (enable SPI bus)
     *     @return <i>uint8_t</i> 0 on failure
     */
-    static uint8_t doBIST(uint8_t csPin = PA8);
+    static uint8_t doBIST(uint8_t csPin = PA4);
 };
 
 typedef ENC28J60 Ethernet; //!< Define alias Ethernet for ENC28J60
