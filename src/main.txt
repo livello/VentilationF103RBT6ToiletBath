@@ -86,7 +86,7 @@ uint32_t changeTimeRemained(int i) { return willChangeTime[i] - millis1(); }
 
 bool isRequestNew(bool currentStatei, int i) { return nextInputState[i] != currentStatei; }
 
-bool changeRequested(bool currentStatei, int i) { return digitalInputState[i] != currentStatei; }
+bool isChangeRequested(bool currentStatei, int i) { return digitalInputState[i] != currentStatei; }
 
 void millisTicker1() {
     millisValue++;

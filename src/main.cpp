@@ -1,18 +1,14 @@
 #include "Arduino.h"
 #include "HardwareSerial.h"
 #include <EtherCard_STM.h>
-#include <EthernetServer.h>
 #include <EthernetClient.h>
-//#include "../.piolibdeps/ModbusIP_ENC28J60_ID1728/ModbusIP_ENC28J60.h"
+#include <EthernetServer.h>
 
-
-#define UDP_BROADCAST_PORT (uint16_t)4000
 #define MIN_PRESS_TIME 500
+#define UDP_BROADCAST_PORT (uint16_t)4000
 
-const PROGMEM uint8 digitalInputPins[6] = {PB12, PB14,PB15,PB2,PA2,PA3};
-const PROGMEM WiringPinMode digitalInputPinsMode[6] = {INPUT_PULLUP,INPUT_PULLUP,INPUT_PULLUP,INPUT_PULLUP,INPUT_PULLDOWN,INPUT_PULLDOWN};
-const PROGMEM uint8 solidStateRelayPins[4] = {PB11, PB10, PB1, PB0};
-const PROGMEM WiringPinMode solidStateRelayPinsMode[4] = {OUTPUT, OUTPUT, OUTPUT, OUTPUT};
+
+
 
 static byte mymac[] = {0x1A, 0x2B, 0x3C, 0x4D, 0x5E, 0x6F};
 byte Ethernet::buffer[700];
@@ -26,32 +22,79 @@ static byte dnsip[] = {192, 168, 10, 1};
 // remote website name
 const char website[] PROGMEM = "google.com";
 char textToSend[] = "test 123";
-static uint32_t timer;
+static uint32_t timer=0;
 const int srcPort PROGMEM = 4321;
-int checkNum = 0;
-bool digitalInputState[6], nextInputState[6];
-uint64_t willChangeTime[6];
+
 
 EthernetServer server(80);
 EthernetClient client;
-void sendRelayControlPageToEthernetClient();
 
+
+const volatile PROGMEM uint8 digitalInputPins[6] = {PB12, PB14,PB15,PB2,PA2,PA3};
+const volatile PROGMEM WiringPinMode digitalInputPinsMode[6] = {INPUT_PULLUP,INPUT_PULLUP,INPUT_PULLUP,INPUT_PULLUP,INPUT_PULLDOWN,INPUT_PULLDOWN};
+const volatile PROGMEM uint8 solidStateRelayPins[4] = {PB11, PB10, PB1, PB0};
+const volatile PROGMEM WiringPinMode solidStateRelayPinsMode[4] = {OUTPUT, OUTPUT, OUTPUT, OUTPUT};
+int checkNum = 0;
+
+bool digitalInputState[6]={0, 0, 0, 0, 0, 0}, nextInputState[6]={0, 0, 0, 0, 0, 0};
+bool currentStateBuffer = 0;
+uint64_t willChangeTime[6]={0,0,0,0,0,0};
+
+void blinkCycle();
 
 void checkDigitalInput();
-bool changeRequested(bool currentStatei, int i);
-bool isRequestNew(bool currentStatei, int i);
-uint32_t changeTimeRemained(int i);
+bool isChangeRequested(int);
+bool isRequestNew(int);
+uint32_t changeTimeRemained(int);
+bool isOnDigitalInput(int);
+void sendRelayControlPageToEthernetClient();
+
+void checkDigitalInput() {
+    for (int i = 0; i < 6; i++) {
+        currentStateBuffer = isOnDigitalInput(i);
+        if (isChangeRequested(i)) {
+            if (isRequestNew(i)) {
+                nextInputState[i] = currentStateBuffer;
+                willChangeTime[i] = millis() + MIN_PRESS_TIME;
+                continue;
+            } else if (changeTimeRemained(i) < 0) {
+                digitalInputState[i] = nextInputState[i];
+//                modbusIP.Ists(1000+i,digitalInputState[i]);
+                willChangeTime[i] = 0;
+//                blink(i);
+            }
+
+        } else {
+            willChangeTime[i] = 0;
+            nextInputState[i] = digitalInputState[i];
+
+        }
+    }
+    blinkCycle();
+}
+
+bool isOnDigitalInput(int index) { return (0!=digitalRead(digitalInputPins[index])); }
+
+uint32_t changeTimeRemained(int i) { return willChangeTime[i] - millis(); }
+
+bool isRequestNew(int i) { return nextInputState[i] != currentStateBuffer; }
+
+bool isChangeRequested(int i) { return digitalInputState[i] != currentStateBuffer; }
+
 
 void blink(int channel){
-//    digitalWrite(solidStateRelayPins[channel],!digitalRead(solidStateRelayPins[channel]));
-    for(int i=0;i<sizeof(solidStateRelayPins);i++)
-        digitalWrite(solidStateRelayPins[i],(i+checkNum)%2);
+    digitalWrite(solidStateRelayPins[channel],!digitalRead(solidStateRelayPins[channel]));
+//    for(int i=0;i<sizeof(solidStateRelayPins);i++)
+//        digitalWrite(solidStateRelayPins[i],(i+checkNum)%2);
 }
 void blinkCycle(){
-//    blink(checkNum%4);
+    blink(checkNum%4);
     checkNum++;
 
 }
+
+
+
 void setup() {
     Serial.begin(115200);
     Serial.println("Hello from f103c8 ugly board!!!");
@@ -82,36 +125,6 @@ void setup() {
 
 }
 
-void checkDigitalInput() {
-    bool currentStatei = 0;
-    for (int i = 0; i < 6; i++) {
-        currentStatei = digitalRead(digitalInputPins[i]);
-        if (changeRequested(currentStatei, i)) {
-            if (isRequestNew(currentStatei, i)) {
-                nextInputState[i] = currentStatei;
-                willChangeTime[i] = millis() + MIN_PRESS_TIME;
-                continue;
-            } else if (changeTimeRemained(i) < 0) {
-                digitalInputState[i] = nextInputState[i];
-//                modbusIP.Ists(1000+i,digitalInputState[i]);
-                willChangeTime[i] = 0;
-//                blink(i);
-            }
-
-        } else {
-            willChangeTime[i] = 0;
-            nextInputState[i] = digitalInputState[i];
-
-        }
-    }
-    blinkCycle();
-}
-
-uint32_t changeTimeRemained(int i) { return willChangeTime[i] - millis(); }
-
-bool isRequestNew(bool currentStatei, int i) { return nextInputState[i] != currentStatei; }
-
-bool changeRequested(bool currentStatei, int i) { return digitalInputState[i] != currentStatei; }
 
 
 uint32_t nextSerialSend = 0;
@@ -119,12 +132,12 @@ void loop() {
     ether.packetLoop(ether.packetReceive());
 //    modbusIP.task();
     if (millis() > timer) {
-        timer = millis() + 2000;
+        timer = millis() + 200;
         //static void sendUdp (char *data,uint8_t len,uint16_t sport, uint8_t *dip, uint16_t dport);
         ether.sendUdp(textToSend, sizeof(textToSend), srcPort, broadcast_ip, UDP_BROADCAST_PORT);
     }
     if(millis()>nextSerialSend){
-        Serial.print(checkNum);
+        Serial.print(millis());
         Serial.print(": DI");
         for(int i=0;i<sizeof(digitalInputPins);i++){
             (digitalInputState[i])?Serial.print("+"):Serial.print("-");
