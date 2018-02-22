@@ -18,66 +18,50 @@ static byte dnsip[] = {192, 168, 10, 1};
 // remote website name
 const char website[] PROGMEM = "google.com";
 char textToSend[] = "test 123";
-static uint32_t timeUdpSend=0;
+static uint32_t timeUdpSend = 0;
 const int srcPort PROGMEM = 4321;
-
-const char pageA[] PROGMEM =
-"HTTP/1.0 200 OK\r\n"
-        "Content-Type: text/html\r\n"
-        "\r\n"
-        "<html>"
-        "<head><title>"
-        "multipackets Test"
-        "</title></head>"
-        "<body>"
-        "<a href='/'>Start here</a><br>"
-        "<h3>packet 1</h3>"
-        "<p><em>"
-        "the first packet send "
-        "</em></p>"
-;
-const char pageB[] PROGMEM =
-"<h3>packet 2</h3>"
-        "<p><em>"
-        "if you read this it mean it works"
-        "</em></p>"
-;
-const char pageC[] PROGMEM =
-"<h3>packet 3</h3>"
-        "<p><em>"
-        "if you read this it mean it works"
-        "</em></p>"
-;
-const char pageD[] PROGMEM =
-"<h3>packet 4</h3>"
-        "<p><em>"
-        "if you read this it mean it works"
-        "</em></p>"
-;
-const char pageE[] PROGMEM =
-"<h3>packet 5</h3>"
-        "<p><em>"
-        "this is the last packet"
-        "</em></p>"
-;
+char message_buffer[100];
+char portStatesString[]="------";
+char pageState[] =
+        "<html>\n"
+                "<head>\n"
+                "<meta http-equiv=\"refresh\" content=\"30\">\n"
+                "<title>Zelectro. Relay + Ethernet shield.</title>\n"
+                "</head>\n"
+                "<body>\n"
+                "<h3>Zelectro. Relay + Ethernet shield.</h3>\n"
+                "<form method='get'>\n"
+                "<div>Relay 1 <input type='checkbox'  name='r0'></div>\n"
+                "<div>Relay 2 <input type='checkbox' checked name='r1'></div>\n"
+                "<div>Relay 3 <input type='checkbox' checked name='r2'></div>\n"
+                "<div>Relay 4 <input type='checkbox' checked name='r3'></div>\n"
+                "<input type='submit' value='Refresh'>\n"
+                "</form>\n"
+                "PortStates:\n"
+                "@ABCDEF@\n"
+                "!REL! \n"
+                "</html>";
 
 
-
-const volatile PROGMEM uint8 digitalInputPins[6] = {PB12, PB14,PB15,PB2,PA2,PA3};
-const volatile PROGMEM WiringPinMode digitalInputPinsMode[6] = {INPUT_PULLUP,INPUT_PULLUP,INPUT_PULLUP,INPUT_PULLUP,INPUT_PULLDOWN,INPUT_PULLDOWN};
+const volatile PROGMEM uint8 digitalInputPins[6] = {PB12, PB14, PB15, PB2, PA2, PA3};
+const volatile PROGMEM WiringPinMode digitalInputPinsMode[6] = {INPUT_PULLUP, INPUT_PULLUP, INPUT_PULLUP, INPUT_PULLUP,
+                                                                INPUT_PULLDOWN, INPUT_PULLDOWN};
 const volatile PROGMEM uint8 solidStateRelayPins[4] = {PB11, PB10, PB1, PB0};
 const volatile PROGMEM WiringPinMode solidStateRelayPinsMode[4] = {OUTPUT, OUTPUT, OUTPUT, OUTPUT};
 
-bool digitalInputState[6]={0, 0, 0, 0, 0, 0}, nextInputState[6]={0, 0, 0, 0, 0, 0};
+bool digitalInputState[6] = {0, 0, 0, 0, 0, 0}, nextInputState[6] = {0, 0, 0, 0, 0, 0};
 bool currentStateBuffer = 0;
-uint64_t willChangeTime[6]={0,0,0,0,0,0};
+uint64_t willChangeTime[6] = {0, 0, 0, 0, 0, 0};
 
 void checkDigitalInput();
-bool isChangeRequested(int);
-bool isRequestNew(int);
-bool isChangeTimeOut(int);
-bool isOnDigitalInput(int);
 
+bool isChangeRequested(int);
+
+bool isRequestNew(int);
+
+bool isChangeTimeOut(int);
+
+bool isOnDigitalInput(int);
 
 
 void checkDigitalInput() {
@@ -91,6 +75,7 @@ void checkDigitalInput() {
             } else if (isChangeTimeOut(i)) {
                 digitalInputState[i] = nextInputState[i];
                 willChangeTime[i] = 0;
+                portStatesString[i]=digitalInputState[i]?'+':'-';
             }
 
         } else {
@@ -99,6 +84,7 @@ void checkDigitalInput() {
         }
     }
 }
+
 
 bool isOnDigitalInput(int index) { return digitalRead(digitalInputPins[index]); }
 
@@ -112,13 +98,13 @@ bool isChangeRequested(int i) { return digitalInputState[i] != currentStateBuffe
 void sendRelayControlPageToEthernetClient();
 
 
+void sendPageState();
 
-void blink(int channel){
-    digitalWrite(solidStateRelayPins[channel],!digitalRead(solidStateRelayPins[channel]));
+void blink(int channel) {
+    digitalWrite(solidStateRelayPins[channel], !digitalRead(solidStateRelayPins[channel]));
 //    for(int i=0;i<sizeof(solidStateRelayPins);i++)
 //        digitalWrite(solidStateRelayPins[i],(i+checkNum)%2);
 }
-
 
 
 void setup() {
@@ -134,76 +120,74 @@ void setup() {
         ether.staticSetup(myip, gwip, dnsip);
     }
     ether.copyIp(ether.dnsip, dnsip);
-    for(int i=0;i<sizeof(digitalInputPins);i++){
+    for (int i = 0; i < sizeof(digitalInputPins); i++) {
 //        modbusIP.addIsts(1000+i,0);
-        pinMode(digitalInputPins[i],digitalInputPinsMode[i]);
+        pinMode(digitalInputPins[i], digitalInputPinsMode[i]);
     }
-    for(int i=0;i<sizeof(solidStateRelayPins);i++){
+    for (int i = 0; i < sizeof(solidStateRelayPins); i++) {
 //        modbusIP.addCoil(1100+i,0);
-        pinMode(solidStateRelayPins[i],solidStateRelayPinsMode[i]);
+        pinMode(solidStateRelayPins[i], solidStateRelayPinsMode[i]);
     }
 
 
-    Timer1.setPeriod(100000); // set a timer of length 100000 microseconds (or 0.1 sec - or 10Hz => the led will blink 5 times, 5 cycles of on-and-off, per second)
-    Timer1.attachInterrupt(1, checkDigitalInput ); // attach the service routine here
+    Timer1.setPeriod(
+            100000); // set a timer of length 100000 microseconds (or 0.1 sec - or 10Hz => the led will blink 5 times, 5 cycles of on-and-off, per second)
+    Timer1.attachInterrupt(1, checkDigitalInput); // attach the service routine here
 
 }
 
 
-
 uint32_t nextSerialSend = 0;
+
 void loop() {
 //    ether.packetLoop(ether.packetReceive());
 //    modbusIP.task();
     if (millis() > timeUdpSend) {
         timeUdpSend = millis() + 5000;
         //static void sendUdp (char *data,uint8_t len,uint16_t sport, uint8_t *dip, uint16_t dport);
-        ether.sendUdp(textToSend, sizeof(textToSend), srcPort, broadcast_ip, UDP_BROADCAST_PORT);
+//        sprintf(message_buffer, "%ld %s", millis(),textToSend);
+        ether.sendUdp(message_buffer, sizeof(message_buffer), srcPort, broadcast_ip, UDP_BROADCAST_PORT);
     }
-    if(millis()>nextSerialSend){
+    if (millis() > nextSerialSend) {
         Serial.print(millis());
         Serial.print(": DI");
-        for(int i=0;i<sizeof(digitalInputPins);i++){
-            (digitalInputState[i])?Serial.print("+"):Serial.print("-");
+        for (int i = 0; i < sizeof(digitalInputPins); i++) {
+            (digitalInputState[i]) ? Serial.print("+") : Serial.print("-");
         }
         Serial.print(": I");
-        for(int i=0;i<sizeof(digitalInputPins);i++){
-            digitalRead(digitalInputPins[i])?Serial.print("+"):Serial.print("-");
+        for (int i = 0; i < sizeof(digitalInputPins); i++) {
+            digitalRead(digitalInputPins[i]) ? Serial.print("+") : Serial.print("-");
         }
         Serial.print(" R");
-        for(int i=0;i<sizeof(solidStateRelayPins);i++){
+        for (int i = 0; i < sizeof(solidStateRelayPins); i++) {
 
-            digitalRead(solidStateRelayPins[i])?Serial.print("+"):Serial.print("-");
+            digitalRead(solidStateRelayPins[i]) ? Serial.print("+") : Serial.print("-");
         }
+        Serial.print(message_buffer);
         Serial.println();
-        nextSerialSend=millis()+250;
+        nextSerialSend = millis() + 250;
     }
     word pos = ether.packetLoop(ether.packetReceive());
     // check if valid tcp data is received
     if (pos) {
-        char* data = (char *) Ethernet::buffer + pos;
+        char *data = (char *) Ethernet::buffer + pos;
+        memccpy(&message_buffer, data, 10, 90);
         if (strncmp("GET / ", data, 6) == 0) {
-            ether.httpServerReplyAck(); // send ack to the request
-            memcpy_P(ether.tcpOffset(), pageA, sizeof pageA); // send first packet and not send the terminate flag
-            ether.httpServerReply_with_flags(sizeof pageA - 1,TCP_FLAGS_ACK_V);
-            memcpy_P(ether.tcpOffset(), pageB, sizeof pageB); // send second packet and not send the terminate flag
-            ether.httpServerReply_with_flags(sizeof pageB - 1,TCP_FLAGS_ACK_V);
-            memcpy_P(ether.tcpOffset(), pageC, sizeof pageC); // send thirdt packet and not send the terminate flag
-            ether.httpServerReply_with_flags(sizeof pageC - 1,TCP_FLAGS_ACK_V);
-            memcpy_P(ether.tcpOffset(), pageD, sizeof pageD); // send fourth packet and not send the terminate flag
-            ether.httpServerReply_with_flags(sizeof pageD - 1,TCP_FLAGS_ACK_V);
-            memcpy_P(ether.tcpOffset(), pageE, sizeof pageE); // send fiveth packet and send the terminate flag
-            ether.httpServerReply_with_flags(sizeof pageE - 1,TCP_FLAGS_ACK_V|TCP_FLAGS_FIN_V); }
-        else
-        {
-            ether.httpServerReplyAck(); // send ack to the request
-            memcpy_P(ether.tcpOffset(), pageA, sizeof pageA);//only the first part will sended
-            ether.httpServerReply_with_flags(sizeof pageA - 1,TCP_FLAGS_ACK_V|TCP_FLAGS_FIN_V);
+            sendPageState();
+        } else {
+            sendPageState();
         }
     }
-
-
-
 }
+
+void sendPageState() {
+    ether.httpServerReplyAck(); // send ack to the request
+    memcpy_P(ether.tcpOffset(), pageState, sizeof pageState); // send fiveth packet and send the terminate flag
+    ether.httpServerReply_with_flags(sizeof pageState - 1, TCP_FLAGS_ACK_V | TCP_FLAGS_FIN_V);
+}
+
+
+
+
 void sendRelayControlPageToEthernetClient() {
 }
